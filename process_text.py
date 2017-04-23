@@ -3,25 +3,15 @@ import operator
 import requests
 import numpy as np
 import pandas as pd
-import sklearn
 import pdb
 import requests
 import csv
 import json
 import time
 import os
-import fuzzywuzzy
-#from datetime import datetime
-#from sklearn.cluster import KMeans
-#from sklearn.mixture import GMM
-#from sklearn.metrics import silhouette_score
-#from sklearn.decomposition import PCA
-#import matplotlib.pyplot as plt
-#from pandas.tools.plotting import scatter_matrix
-#import pprint
-#from sklearn.preprocessing import MinMaxScaler
-#from scipy import stats
-##from textwrap import wrap
+import sqlalchemy
+from sqlalchemy import *
+import psycopg2
 
 np.set_printoptions(precision=3, suppress=True)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
@@ -30,6 +20,8 @@ ORIGINAL_CSV_FILE = 'data/CCL_LTEs.csv'
 ENRICHED_CSV_FILE = 'data/CCL_LTEs_ENRICHED.csv'
 STATE_PARTY = 'data/STATE_PARTY.csv'
 FINAL_DATA = 'data/FINAL_DATA.csv'
+FINAL_DATA_CONGRESS = 'data/FINAL_DATA_CONGRESS.csv'
+FINAL_DATA_WORDS = 'data/FINAL_DATA_WORDS.csv'
 
 LTE_DATA = pd.read_csv(ORIGINAL_CSV_FILE)
 
@@ -100,7 +92,7 @@ class ProcessData(object):
 
     @staticmethod
     def ascii_characters(string):
-        return ''.join([x for x in string.encode('utf-8') if ord(x) < 128])
+        return ''.join([x for x in unicode(string, errors='replace') if ord(x) < 128])
 
     def print_publications(self):
         """ Print the 20 most common publications """
@@ -129,10 +121,11 @@ class ProcessData(object):
         )
         print letter_lengths
 
-    @staticmethod
-    def words_in_text(string):
+    def words_in_text(self, string):
         """ Return the number of words in a text string """
         tokenizer = nltk.tokenize.RegexpTokenizer(r'\w+')
+        if type(string) != unicode:
+            string = self.ascii_characters(unicode(str(string), errors='replace').encode('utf-8'))
         tokens = tokenizer.tokenize(string)
         return tokens
 
@@ -144,7 +137,7 @@ class ProcessData(object):
         all_words = self.words_in_text(all_text)
 
         non_stop_words = [word for word in all_words if word not in stopwords]
-        print self.frequency_list(non_stop_words)[:30]
+        print self.frequency_list(non_stop_words)[:60]
 
     def find_state(self, place):
         if type(place) != str:
@@ -175,7 +168,6 @@ class ProcessData(object):
     def create_final_df(self):
         old_data = self.data
         enriched_data = pd.read_csv(ENRICHED_CSV_FILE)
-        state_data = pd.read_csv(STATE_PARTY)
 
         with_share_count_df = old_data.merge(
             enriched_data[['Field Report Name', 'Share Count']],
@@ -195,29 +187,71 @@ class ProcessData(object):
                 print with_share_count_df.loc[index]
                 writer.writerow(with_share_count_df.loc[index])
 
-        #pdb.set_trace()
-        #final_df = with_share_count_df.merge(
-        #    state_data,
-        #    on='State',
-        #    how='left'
-        #)
+    def add_representation_to_final_df(self):
+        final_df = pd.read_csv(FINAL_DATA, encoding = "ISO-8859-1")
+        #final_df['Text of Media'] = final_df['Text of Media'].decode('utf-8')
+        state_data = pd.read_csv(STATE_PARTY)
+        final_congress_df = final_df.merge(
+            state_data[['State', 'house_rep', 'house_dem']],
+            on='State',
+            how='left'
+        )
 
+        final_congress_df['Share Congress Republican'] = \
+            final_congress_df['house_rep'] / \
+            (final_congress_df['house_rep'] + final_congress_df['house_dem'])
+        print final_congress_df.columns.values
+        print final_congress_df.shape
+        final_congress_df.to_csv(FINAL_DATA_CONGRESS, encoding='ISO-8859-1')
 
-        #for line in final_df:
-            #state = self.add_state_column(line.iloc[i, 'City of Publication'])
-            #return state
-        
-       # state_ab_choices = state_data['state']
-       # state_full_choices = state_data['full_state_name']
+    def add_word_count_to_final_df(self):
+        final_df = pd.read_csv(
+            FINAL_DATA_CONGRESS,
+            engine='c',
+            encoding ="latin-1",
+            lineterminator='\n'
+        )
+        print final_df.shape
+        print final_df.columns.values
+        final_df['word_count'] = final_df['Text of Media'].apply(
+            lambda x: len(self.words_in_text(x))
+        )
+ 
+        lte_db = create_engine('postgresql://burnssa@localhost/ccl_lte')
+        try:
+            lte_db.connect()
+            metadata = MetaData(lte_db)
+            ccl_table = Table('LTE', metadata, autoload=True)
+            result = lte_db.execute('SELECT * FROM "LTE"')
+            pdb.set_trace()
+
+        except psycopg2.OperationalError:
+            final_df.to_sql(name='LTE', con=lte_db, if_exists='fail')
+
+        final_df.to_csv(FINAL_DATA_CONGRESS, encoding='ISO-8859-1')
+
+    def add_select_word_dummies(self):
+        lte_db = create_engine('postgresql://burnssa@localhost/ccl_lte')
+        conn = lte_db.connect()
+        lte_df = pd.read_sql('LTE', con=conn)
+        lte_df['word_tax'] = 1 if 'tax' in lte_df['Text of Media'] else 0
+        lte_df['word_fee'] = 1 if 'fee' in lte_df['Text of Media'] else 0
+        lte_df['word_dividend'] = \
+            1 if 'dividend' in lte_df['Text of Media'] else 0
+        #lte_df.to_sql(name='LTE_FINAL', con=lte_db, if_exists='fail')
+        lte_df.to_csv(FINAL_DATA_WORDS, encoding='ISO-8859-1', mode='wb')
 
 def run_process_data(data):
     p = ProcessData(data)
-    p.create_final_df()
+    p.add_select_word_dummies()
+    #p.add_representation_to_final_df()
+    #p.add_word_count_to_final_df()
+    #p.create_final_df()
     #p.add_facebook_share_count()
     #p.check_data_load()
     #p.print_publications()
     #p.print_cities()
     #p.print_word_count_histogram()
-    #p.most_frequent_words()
+    p.most_frequent_words()
 
 run_process_data(LTE_DATA)
