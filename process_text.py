@@ -21,7 +21,7 @@ ENRICHED_CSV_FILE = 'data/CCL_LTEs_ENRICHED.csv'
 STATE_PARTY = 'data/STATE_PARTY.csv'
 FINAL_DATA = 'data/FINAL_DATA.csv'
 FINAL_DATA_CONGRESS = 'data/FINAL_DATA_CONGRESS.csv'
-FINAL_DATA_WORDS = 'data/FINAL_DATA_WORDS.csv'
+FINAL_DATA_WORDS = 'data/FINAL_DATA_WORDS.xlsx'
 
 LTE_DATA = pd.read_csv(ORIGINAL_CSV_FILE)
 
@@ -223,23 +223,34 @@ class ProcessData(object):
             metadata = MetaData(lte_db)
             ccl_table = Table('LTE', metadata, autoload=True)
             result = lte_db.execute('SELECT * FROM "LTE"')
-            pdb.set_trace()
 
         except psycopg2.OperationalError:
             final_df.to_sql(name='LTE', con=lte_db, if_exists='fail')
 
         final_df.to_csv(FINAL_DATA_CONGRESS, encoding='ISO-8859-1')
 
+    @staticmethod
+    def check_for_word_in_text(series, word):
+        return series.str.contains(word).fillna(0).astype(int)
+
     def add_select_word_dummies(self):
         lte_db = create_engine('postgresql://burnssa@localhost/ccl_lte')
         conn = lte_db.connect()
         lte_df = pd.read_sql('LTE', con=conn)
-        lte_df['word_tax'] = 1 if 'tax' in lte_df['Text of Media'] else 0
-        lte_df['word_fee'] = 1 if 'fee' in lte_df['Text of Media'] else 0
+        lte_df['word_tax'] = \
+            self.check_for_word_in_text(lte_df['Text of Media'], 'tax')
+        lte_df['word_fee'] = \
+            self.check_for_word_in_text(lte_df['Text of Media'], 'fee')
         lte_df['word_dividend'] = \
-            1 if 'dividend' in lte_df['Text of Media'] else 0
-        #lte_df.to_sql(name='LTE_FINAL', con=lte_db, if_exists='fail')
-        lte_df.to_csv(FINAL_DATA_WORDS, encoding='ISO-8859-1', mode='wb')
+            self.check_for_word_in_text(lte_df['Text of Media'], 'dividend')
+        if not lte_db.dialect.has_table(lte_db, 'LTE_FINAL'): 
+            lte_df.to_sql(
+                name='LTE_FINAL',
+                con=lte_db,
+                if_exists='fail',
+                index=False
+            )
+        lte_df.to_excel(FINAL_DATA_WORDS, encoding='UTF-8')
 
 def run_process_data(data):
     p = ProcessData(data)
@@ -252,6 +263,6 @@ def run_process_data(data):
     #p.print_publications()
     #p.print_cities()
     #p.print_word_count_histogram()
-    p.most_frequent_words()
+    #p.most_frequent_words()
 
 run_process_data(LTE_DATA)
