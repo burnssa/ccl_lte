@@ -9,10 +9,12 @@
 }
 
 .states :hover {
-  fill: none;
-  opacity: 0;
+  fill: #FFFAF0;
+  opacity: 10;
 }
 
+.letter_label text {
+  
 </style>
 
 <svg width="960" height="600"></svg>
@@ -37,7 +39,7 @@ var path = d3.geoPath();
 
 var x = d3.scaleLinear()
   .domain([1, 1500])
-  .rangeRound([350, 880]);
+  .rangeRound([300, 880]);
 
 var color = d3.scaleThreshold()
   .domain([10,50,100,150,200,300,500,1000,1500])
@@ -71,10 +73,12 @@ g.append("text")
   .attr("font-weight", "bold")
   .text("Letters to the Editor Published");
 
-g.call(d3.axisBottom(x)
-  .tickSize(13)
-  .tickFormat(function(x, i) { return i ? x : x; })
-  .tickValues(color.domain()))
+g.call(
+  d3.axisBottom(x)
+    .tickSize(13)
+    .tickFormat(function(x, i) { return i ? x : x; })
+    .tickValues(color.domain())
+  )
   .select(".domain")
   .remove();
 
@@ -102,33 +106,36 @@ function ready(error, us) {
       .text(function(d) { return d.letters; });
 
   svg.append("path")
-      .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
+      .datum(
+        topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; })
+      )
       .attr("class", "states")
       .attr("d", path);
-  
+
   function getPosition(element){
     var bbox = element.getBBox();
-    return [bbox.x + bbox.width/2, bbox.y + bbox.height/2];
+    return [bbox.x + bbox.width / 4, bbox.y + bbox.height / 1.5];
   }
 
-
   var states = svg.selectAll('path')
-  states.on("mouseover", function(d){
-    d3.select(this)
-      .style("stroke", "D3D3D3")
-      .style("stroke-width", "3");
+  states.on("mouseover", function(d)
+    {
+      d3.select(this)
+        .style("stroke", "D3D3D3")
+        .style("stroke-width", "3");
 
-    svg 
-      .append("text")
-      .attr("class", "letter_label")
-      .text(d.letters)
-      .attr("x", getPosition(this)[0])
-      .attr("y", getPosition(this)[1])
-      .attr("width", "20px")
-      .attr("height", "20px")
-      .attr("font-size", "50pt")
-      .attr("color", "red")
-   })
+      svg
+        .append("text")
+        .attr("class", "letter_label")
+        .text(d.letters)
+        .attr("font-family", "sans-serif")
+        .attr("font-weight", "bold")
+        .attr("font-size", "40pt")
+        .style("fill", "081d58")
+        .attr("x", getPosition(this)[0])
+        .attr("y", getPosition(this)[1])
+     }
+  )
 
   states.on("mouseout", function(d){
     d3.select(this)

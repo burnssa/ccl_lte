@@ -15,6 +15,7 @@ REQUIRED_COLS = ['Share Count', 'State']
 US_CLEAN_LETTER_DATA = 'LTE_CLEAN'
 NON_ROOT_LINK_DATA = 'LTE_NON_ROOT_LINK'
 SENTIMENT_DATA = 'SENTIMENT_DATA'
+FINAL_DATA = 'data/ccl_lte_final.csv'
 
 class TrainData(object):
     """ Trains a regression of facebook share count on a set of LTE features"""
@@ -33,8 +34,7 @@ class TrainData(object):
                 con=lte_db,
                 index=False,
                 if_exists='fail'
-            )
-
+            ) 
     def filter_data_for_root_domains(self):
         root_domains = ['.com', '.net', '.org', 'com/', 'net/', 'tor/', 'org/']
         try:
@@ -90,28 +90,26 @@ class TrainData(object):
         X = final_data[[
             'Share Congress Republican',
             'word_count',
-            'word_count_quad_term',
             'word_tax',
             'word_fee',
             'word_dividend',
             'days_since_first_letter',
             'pos_score',
             'neg_score',
-            'repub_days_interaction'
         ]]
         Y = final_data['Share Count']
 
-        X = sm.add_constant(X)
+        #X = sm.add_constant(X)
         est = sm.OLS(Y, X).fit()
 
         print est.summary()
-        final_data.to_csv('data/SENTIMENT_ANALYSIS.csv', encoding='utf-8')
-        final_data.to_excel('data/SENTIMENT_ANALYSIS.xlsx', encoding='utf-8')
+        #final_data.to_csv('data/SENTIMENT_ANALYSIS.csv', encoding='utf-8')
+        #final_data.to_excel('data/SENTIMENT_ANALYSIS.xlsx', encoding='utf-8')
 
 def run_train_data(data):
     t = TrainData(data)
-    #t.filter_data_for_share_count_and_us()
-    #.filter_data_for_root_domains()
+    t.filter_data_for_share_count_and_us()
+    t.filter_data_for_root_domains()
     #t.print_most_shared()
     #t.add_sentiment_analysis()
     t.regress_share_count_on_features()

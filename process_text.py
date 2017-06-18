@@ -23,6 +23,7 @@ FINAL_DATA = 'data/FINAL_DATA.csv'
 FINAL_DATA_CONGRESS = 'data/FINAL_DATA_CONGRESS.csv'
 FINAL_DATA_WORDS = 'data/FINAL_DATA_WORDS.xlsx'
 
+FINAL_DATA = pd.read_csv('data/ccl_lte_final.csv')
 LTE_DATA = pd.read_csv(ORIGINAL_CSV_FILE)
 
 class ProcessData(object):
@@ -41,17 +42,42 @@ class ProcessData(object):
         except:
             print "Dataset could not be loaded. Is the dataset missing?"
 
-    def add_facebook_share_count(self):
-        current_enriched_data = pd.read_csv(ENRICHED_CSV_FILE)
-        if len(current_enriched_data) > 0:
+    ### Static methods
+
+    @staticmethod
+    def frequency_list(column):
+        """ Return an ordered dict of most common categories """
+        unique, counts = np.unique(column, return_counts=True)
+        freq_dict = dict(zip(unique, counts))
+        sorted_dict = sorted(
+            freq_dict.items(),
+            key=operator.itemgetter(1), reverse=True
+        )
+        return sorted_dict
+
+    @staticmethod
+    def ascii_characters(string):
+        return ''.join(
+            [x for x in unicode(string, errors='replace') if ord(x) < 128]
+        )
+
+    @staticmethod
+    def check_for_word_in_text(series, word):
+        return series.str.contains(word).fillna(0).astype(int)
+
+    ### Dataset enrichment
+
+    def add_facebook_share_count(self, file_path):
+        current_data = pd.read_csv(file_path)
+        if len(current_data) > 0:
             last_row_id = \
-                current_enriched_data['Field Report Name'].iloc[-1]
+                current_data['Field Report Name'].iloc[-1]
             append_start_row = \
                 self.data[self.data['Field Report Name'] == last_row_id] \
                     .index.values[0] + 1
         else:
             append_start_row = 1
-        with open(ENRICHED_CSV_FILE, 'ab') as fout:
+        with open(file_path, 'ab') as fout:
             writer = csv.writer(fout, delimiter=',')
             for _, row in self.data[append_start_row:].iterrows():
                 media_url = self.ascii_characters(row['Link to Published Media'])
@@ -78,66 +104,6 @@ class ProcessData(object):
                     row['Share Count'] = share_count
                     print row['Share Count']
                     writer.writerow(row)
-
-    @staticmethod
-    def frequency_list(column):
-        """ Return an ordered dict of most common categories """
-        unique, counts = np.unique(column, return_counts=True)
-        freq_dict = dict(zip(unique, counts))
-        sorted_dict = sorted(
-            freq_dict.items(),
-            key=operator.itemgetter(1), reverse=True
-        )
-        return sorted_dict
-
-    @staticmethod
-    def ascii_characters(string):
-        return ''.join([x for x in unicode(string, errors='replace') if ord(x) < 128])
-
-    def print_publications(self):
-        """ Print the 20 most common publications """
-        publication_list = self.frequency_list(self.data['Media Title'])
-        print publication_list[:20]
-
-    def print_cities(self):
-        """ Print the 20 most common cities """
-        city_list = self.frequency_list(self.data['City of Publication'])
-        print city_list[:20]
-
-    def print_word_count_histogram(self):
-        """ Print a histogram of dataset letter lengths """
-        lengths_array = np.asarray(
-            [
-                len(
-                    self.words_in_text(text)
-                ) for text in self.data['Text of Media']
-                .dropna(0)
-            ]
-        )
-
-        letter_lengths = np.histogram(
-            lengths_array,
-            bins=[0, 100, 200, 300, 400, 500, 1000, 10000]
-        )
-        print letter_lengths
-
-    def words_in_text(self, string):
-        """ Return the number of words in a text string """
-        tokenizer = nltk.tokenize.RegexpTokenizer(r'\w+')
-        if type(string) != unicode:
-            string = self.ascii_characters(unicode(str(string), errors='replace').encode('utf-8'))
-        tokens = tokenizer.tokenize(string)
-        return tokens
-
-    def most_frequent_words(self):
-        stopwords = nltk.corpus.stopwords.words('english')
-        all_text = ''.join(
-            text.lower() for text in self.data['Text of Media'].dropna(0)
-        )
-        all_words = self.words_in_text(all_text)
-
-        non_stop_words = [word for word in all_words if word not in stopwords]
-        print self.frequency_list(non_stop_words)[:60]
 
     def find_state(self, place):
         if type(place) != str:
@@ -216,7 +182,7 @@ class ProcessData(object):
         final_df['word_count'] = final_df['Text of Media'].apply(
             lambda x: len(self.words_in_text(x))
         )
- 
+
         lte_db = create_engine('postgresql://burnssa@localhost/ccl_lte')
         try:
             lte_db.connect()
@@ -228,10 +194,6 @@ class ProcessData(object):
             final_df.to_sql(name='LTE', con=lte_db, if_exists='fail')
 
         final_df.to_csv(FINAL_DATA_CONGRESS, encoding='ISO-8859-1')
-
-    @staticmethod
-    def check_for_word_in_text(series, word):
-        return series.str.contains(word).fillna(0).astype(int)
 
     def add_select_word_dummies(self):
         lte_db = create_engine('postgresql://burnssa@localhost/ccl_lte')
@@ -252,17 +214,79 @@ class ProcessData(object):
             )
         lte_df.to_excel(FINAL_DATA_WORDS, encoding='UTF-8')
 
+    ### Summary output
+
+    def print_publications(self):
+        """ Print the 20 most common publications """
+        publication_list = self.frequency_list(self.data['Media Title'])
+        print publication_list[:20]
+
+    def print_cities(self):
+        """ Print the 20 most common cities """
+        city_list = self.frequency_list(self.data['City of Publication'])
+        print city_list[:20]
+
+    def print_word_count_histogram(self):
+        """ Print a histogram of dataset letter lengths """
+        lengths_array = np.asarray(
+            [
+                len(
+                    self.words_in_text(text)
+                ) for text in self.data['Text of Media']
+                .dropna(0)
+            ]
+        )
+
+        letter_lengths = np.histogram(
+            lengths_array,
+            bins=[0, 100, 200, 300, 400, 500, 1000, 10000]
+        )
+        print letter_lengths
+
+    def words_in_text(self, string):
+        """ Return the number of words in a text string """
+        tokenizer = nltk.tokenize.RegexpTokenizer(r'\w+')
+        if type(string) != unicode:
+            string = self.ascii_characters(
+                unicode(str(string), errors='replace').encode('utf-8')
+            )
+        tokens = tokenizer.tokenize(string)
+        return tokens
+
+    def print_most_frequent_words(self):
+        """ Print the 60 most common non-stop words """
+        stopwords = nltk.corpus.stopwords.words('english')
+        all_text = ''.join(
+            text.lower() for text in self.data['Text of Media'].dropna(0)
+        )
+        all_words = self.words_in_text(all_text)
+
+        non_stop_words = [word for word in all_words if word not in stopwords]
+        print self.frequency_list(non_stop_words)[:60]
+
+def field_exists(df, field):
+    if field not in df.columns:
+        return False
+    elif len(df.get(field)) == 0:
+        return False
+    else:
+        return True
+
 def run_process_data(data):
     p = ProcessData(data)
-    p.add_select_word_dummies()
-    #p.add_representation_to_final_df()
-    #p.add_word_count_to_final_df()
-    #p.create_final_df()
-    #p.add_facebook_share_count()
-    #p.check_data_load()
-    #p.print_publications()
-    #p.print_cities()
-    #p.print_word_count_histogram()
-    #p.most_frequent_words()
+    p.check_data_load()
+    if not field_exists(data, 'Share Count'):
+        p.add_facebook_share_count(data)
+    if not field_exists(data, 'word_tax'):
+        p.add_select_word_dummies()
+    if not field_exists(data, 'word_count'):
+        p.add_word_count_to_final_df()
+    if not field_exists(data, 'Share Congress Republican'):
+        p.add_representation_to_final_df()
+        p.create_final_df()
+    # p.print_publications()
+    # p.print_cities()
+    # p.print_word_count_histogram()
+    # p.print_most_frequent_words()
 
-run_process_data(LTE_DATA)
+run_process_data(FINAL_DATA)
