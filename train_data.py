@@ -10,6 +10,7 @@ import pdb
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer as SIA
 from process_text import ProcessData
+import matplotlib.pyplot as plt
 
 REQUIRED_COLS = ['Share Count', 'State']
 US_CLEAN_LETTER_DATA = 'LTE_CLEAN'
@@ -87,24 +88,106 @@ class TrainData(object):
             final_data['Share Congress Republican'] * \
             final_data['days_since_first_letter']
 
-        X = final_data[[
+        # Remove outlier post from LA Times with 47k shares (max value) and 2nd
+        # most shared article on Standing Rock Sioux, which didn't reference
+        # ccl-advocated policy
+        final_data = final_data[
+            final_data['Share Count'] < \
+            final_data['Share Count'].nlargest(2).min()
+        ]
+
+        # Remove top 3 word-count posts, which appear to have formatting issues
+        # and/or contain text of non-related letters
+        final_data = final_data[
+            final_data['word_count'] < final_data['word_count'].nlargest(4).min()
+        ]
+
+        X_vars = [
             'Share Congress Republican',
             'word_count',
             'word_tax',
             'word_fee',
             'word_dividend',
-            'days_since_first_letter',
             'pos_score',
             'neg_score',
-        ]]
+            'word_count_quad_term',
+            'days_since_first_letter',
+            'repub_days_interaction'
+        ]
+
+        X = final_data[X_vars]
         Y = final_data['Share Count']
 
-        #X = sm.add_constant(X)
-        est = sm.OLS(Y, X).fit()
+        X = sm.add_constant(X)
+        est = sm.GLS(Y, X).fit()
 
+        print "GLS estimates for full dataset"
         print est.summary()
+
+        # Create segment of letters since start of 2013
+        recent_final_data = final_data[
+            final_data['numeric_date'] >= datetime(2013, 1, 1)
+        ]
+
+        recent_Y = recent_final_data['Share Count']
+        recent_X = recent_final_data[X_vars]
+
+        recent_X = sm.add_constant(recent_X)
+        recent_est = sm.GLS(recent_Y, recent_X).fit()
+
+        # Create segment of letters in Republican-dominated states
+        rep_final_data = recent_final_data[
+            recent_final_data['Share Congress Republican'] >= 0.6
+        ]
+
+        rep_Y = rep_final_data['Share Count']
+        rep_X = rep_final_data[X_vars]
+
+        rep_X = sm.add_constant(rep_X)
+        rep_est = sm.GLS(rep_Y, rep_X).fit()
+
+        print "GLS estimates for recent data"
+        print recent_est.summary()
+
+        print "GLS estimates for Republican data"
+        print rep_est.summary()
+
+        print "All dataset summary"
+        print final_data.describe([.25, .5, .75])
+
+        print "Recent dataset summary"
+        print recent_final_data.describe([.25, .5, .75])
+
+        print "Republican dataset summary"
+        print rep_final_data.describe([.25, .5, .75])
+
         #final_data.to_csv('data/SENTIMENT_ANALYSIS.csv', encoding='utf-8')
         #final_data.to_excel('data/SENTIMENT_ANALYSIS.xlsx', encoding='utf-8')
+
+        plt.scatter(
+            final_data['word_count'],
+            final_data['Share Count'],
+            s=36,
+            color='green',
+            alpha=0.5,
+        )
+        plt.axis(
+            [
+                -10,
+                1.1 * final_data['word_count'].max(),
+                -10,
+                1.1 * final_data['Share Count'].max()
+            ]
+        )
+        plt.title(
+            "Relationship between published letter word count\n" +
+            "and Facebook share count in CCL letters to the editor ", size=12
+        )
+        plt.xlabel('Letter Word Count', size=12)
+        plt.ylabel('Letter Facebook Share Count', size=12)
+        plt.grid(color='gray', linestyle='--', linewidth=0.5)
+        plt.savefig('plots/words_vs_share.png')
+        plt.show()
 
 def run_train_data(data):
     t = TrainData(data)
