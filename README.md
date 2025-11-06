@@ -1,6 +1,6 @@
 # Citizens' Climate Lobby Letter Engagement Analysis
 
-An analysis of Facebook share volume for Citizens' Climate Lobby (CCL) letters to the editor, examining associations between letter characteristics, state political context, and social media engagement.
+A 2017 analysis of Facebook share volume for Citizens' Climate Lobby (CCL) letters to the editor, examining associations between letter characteristics, state political context, and social media engagement.
 
 ## Project Overview
 
